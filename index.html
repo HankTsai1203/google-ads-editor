@@ -213,19 +213,18 @@
     <!-- 🔥 Firebase SDK & JavaScript 邏輯開始 🔥 -->
     <!-- ========================================== -->
     <script type="module">
-        // 匯入 Firebase SDK
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // ⚠️【重點提示：設定資料庫】⚠️
-        // 已根據您最新的截圖更新專案 ID (api-test-456006)
+        // ⚠️【重點提示：請務必填寫正確金鑰】⚠️
         let firebaseConfig;
         if (typeof __firebase_config !== 'undefined' && __firebase_config) {
             firebaseConfig = JSON.parse(__firebase_config);
         } else {
             firebaseConfig = {
-                apiKey: "AIzaSyCX_j82Y9jV8v0hQhXvR9m9jV8v0hQhXvR", // 請依據您的專案金鑰填寫
+                // ❗ 請從您的 Firebase 控制台複製「正確且完整」的金鑰貼在下方 ❗
+                apiKey: "AIzaSy...", // 這裡必須換成您在截圖中看到的真實 apiKey
                 authDomain: "api-test-456006.firebaseapp.com",
                 projectId: "api-test-456006",
                 storageBucket: "api-test-456006.firebasestorage.app",
@@ -241,13 +240,11 @@
         let authUser = null;
         let currentShareId = null;
 
-        // --- 核心資料狀態 ---
         let rawHeaders = [];      
         let adsData = [];         
         let currentAdIndex = null;
         let currentFilter = 'all';
 
-        // 綁定全域函式
         window.filterAds = filterAds;
         window.selectAd = selectAd;
         window.updateData = updateData;
@@ -265,7 +262,7 @@
                              type === 'success' ? 'ph-fill ph-check-circle text-xl text-google-green' : 
                              'ph-fill ph-info text-xl text-google-blue';
             toast.classList.remove('translate-y-20', 'opacity-0');
-            setTimeout(() => toast.classList.add('translate-y-20', 'opacity-0'), 5000);
+            setTimeout(() => toast.classList.add('translate-y-20', 'opacity-0'), 6000);
         }
 
         document.addEventListener('DOMContentLoaded', () => {
@@ -278,12 +275,17 @@
                     if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                         await signInWithCustomToken(auth, __initial_auth_token);
                     } else {
+                        // 嘗試匿名登入
                         await signInAnonymously(auth);
                     }
                     console.log("Firebase Auth Success");
                 } catch(e) {
-                    console.error("Auth Error", e);
-                    showToast('資料庫登入失敗，請確認 Firebase 已啟用「匿名登入」功能', 'error');
+                    console.error("Auth Error Detail:", e);
+                    // 強化錯誤顯示：顯示具體代碼方便除錯
+                    const errorMsg = e.code === 'auth/invalid-api-key' ? 'API 金鑰錯誤 (apiKey 填錯了)' : 
+                                    e.code === 'auth/operation-not-allowed' ? '匿名登入未在 Firebase 啟用' : 
+                                    `登入失敗: ${e.code}`;
+                    showToast(`資料庫連線失敗：${errorMsg}。請檢查程式碼底部的 firebaseConfig 設定。`, 'error');
                 }
             };
 
@@ -298,31 +300,26 @@
             initAuth();
         });
 
-        // 檢查網址是否帶有 ?id=xxxx
         async function checkUrlForSharedData() {
             const urlParams = new URLSearchParams(window.location.search);
             const shareId = urlParams.get('id');
-            
             if (shareId && authUser) {
                 currentShareId = shareId;
                 document.getElementById('loadingOverlay').classList.remove('hidden');
                 document.getElementById('loadingOverlay').classList.add('flex');
-                
                 try {
                     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'shared_ads', shareId);
                     const docSnap = await getDoc(docRef);
-                    
                     if (docSnap.exists()) {
                         const data = docSnap.data();
                         rawHeaders = data.rawHeaders;
                         adsData = JSON.parse(data.adsData);
-                        
                         document.getElementById('sharedBadge').classList.remove('hidden');
                         document.getElementById('shareBtn').innerHTML = `<i class="ph ph-cloud-arrow-up text-lg"></i> 儲存更新至雲端`;
                         setupWorkspace();
                         showToast('成功從雲端載入專案！', 'success');
                     } else {
-                        showToast('找不到此分享連結的資料，可能已被刪除或 ID 錯誤。', 'error');
+                        showToast('找不到此分享連結的資料。', 'error');
                     }
                 } catch (e) {
                     console.error("Fetch error", e);
@@ -339,42 +336,30 @@
         }
 
         async function generateShareLink() {
-            if (!authUser) return showToast('資料庫未連線，請檢查網路或設定', 'error');
-            if (adsData.length === 0) return showToast('沒有資料可以分享', 'error');
-            
+            if (!authUser) return showToast('資料庫未連線，無法產生連結', 'error');
             const btn = document.getElementById('shareBtn');
             const originalHtml = btn.innerHTML;
             btn.innerHTML = `<i class="ph ph-spinner animate-spin"></i> 處理中...`;
             btn.disabled = true;
-
             try {
                 const shareId = currentShareId || crypto.randomUUID(); 
                 const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'shared_ads', shareId);
-                
                 await setDoc(docRef, {
                     rawHeaders: rawHeaders,
                     adsData: JSON.stringify(adsData), 
                     updatedAt: new Date().toISOString()
                 });
-                
                 currentShareId = shareId;
                 const shareUrl = window.location.origin + window.location.pathname + '?id=' + shareId;
                 document.getElementById('shareUrlInput').value = shareUrl;
-                
                 document.getElementById('sharedBadge').classList.remove('hidden');
                 btn.innerHTML = `<i class="ph ph-cloud-arrow-up text-lg"></i> 儲存更新至雲端`;
-                
                 document.getElementById('shareModal').classList.remove('hidden');
                 document.getElementById('shareModal').classList.add('flex');
-                
                 showToast('雲端同步成功！', 'success');
             } catch (e) {
                 console.error("Save error", e);
-                if (e.code === 'permission-denied') {
-                    showToast('儲存被拒絕！請檢查 Firebase 的「規則 (Rules)」設定。', 'error');
-                } else {
-                    showToast('儲存失敗：' + e.message, 'error');
-                }
+                showToast(`儲存失敗: ${e.code}`, 'error');
                 btn.innerHTML = originalHtml;
             } finally {
                 btn.disabled = false;
@@ -416,7 +401,7 @@
                     headerIndex = i; break;
                 }
             }
-            if (headerIndex === -1) return showToast("找不到必要欄位，請確保包含「廣告活動」與「最終到達網址」。", 'error');
+            if (headerIndex === -1) return showToast("找不到必要欄位。", 'error');
             rawHeaders = rows[headerIndex].map(h => h.replace(/\r?\n|\r/g, '').trim());
             adsData = [];
             let validAds = 0;
@@ -430,7 +415,7 @@
                     adsData.push({ id: validAds++, original: JSON.parse(JSON.stringify(rowObj)), modified: JSON.parse(JSON.stringify(rowObj)), isEdited: false });
                 }
             }
-            if (adsData.length === 0) return showToast("檔案中沒有找到廣告文案資料。", 'error');
+            if (adsData.length === 0) return showToast("找不到廣告文案。", 'error');
             setupWorkspace();
             showToast(`成功匯入 ${adsData.length} 則廣告`, 'success');
         }
@@ -465,125 +450,4 @@
                 const campaign = ad.original['廣告活動'] || '(未命名廣告活動)';
                 const adGroup = ad.original['廣告群組'] || '(未命名廣告群組)';
                 const status = ad.original['廣告狀態'] || ad.original['狀態'] || '未知';
-                const isActive = index === currentAdIndex;
-                const div = document.createElement('div');
-                div.className = `p-3 rounded-lg cursor-pointer border transition-colors ${isActive ? 'bg-blue-50 border-google-blue shadow-sm' : 'bg-white border-transparent hover:border-slate-300'}`;
-                div.onclick = () => selectAd(index);
-                div.innerHTML = `
-                    <div class="flex justify-between items-start mb-1">
-                        <span class="text-xs font-bold ${status.includes('啟用') ? 'text-green-600' : 'text-slate-500'}">${status}</span>
-                        ${ad.isEdited ? '<span class="text-[10px] bg-google-yellow text-yellow-900 px-1.5 py-0.5 rounded font-bold">已修改</span>' : ''}
-                    </div>
-                    <div class="text-sm font-bold text-slate-800 truncate">${adGroup}</div>
-                    <div class="text-xs text-slate-500 truncate mt-0.5">${campaign}</div>
-                `;
-                container.appendChild(div);
-            });
-            if (count === 0) container.innerHTML = `<div class="p-4 text-center text-sm text-slate-500">找不到符合的廣告</div>`;
-            document.getElementById('editedCount').innerText = adsData.filter(a => a.isEdited).length;
-        }
-
-        function selectAd(index) {
-            currentAdIndex = index;
-            renderAdList(); 
-            const ad = adsData[index];
-            document.getElementById('selectAdPlaceholder').classList.add('hidden');
-            document.getElementById('editorContent').classList.remove('hidden');
-            document.getElementById('editCampaign').innerText = ad.original['廣告活動'] || '-';
-            document.getElementById('editAdGroup').innerText = ad.original['廣告群組'] || '-';
-            document.getElementById('editStatusBadge').innerText = ad.original['廣告狀態'] || ad.original['狀態'] || '未知';
-            renderField('field-finalUrl', '最終到達網址', '最終到達網址', 2048, false);
-            renderField('field-path1', '路徑 1', '路徑 1', 15, false);
-            renderField('field-path2', '路徑 2', '路徑 2', 15, false);
-            const hlContainer = document.getElementById('headlinesContainer');
-            hlContainer.innerHTML = '';
-            for (let i = 1; i <= 15; i++) { hlContainer.appendChild(createFieldElement(`廣告標題 ${i}`, `標題 ${i}`, 30, true)); }
-            const descContainer = document.getElementById('descriptionsContainer');
-            descContainer.innerHTML = '';
-            for (let i = 1; i <= 4; i++) { descContainer.appendChild(createFieldElement(`說明 ${i}`, `說明 ${i}`, 90, true)); }
-        }
-
-        function renderField(containerId, dataKey, label, maxLength, hasPosition) {
-            const container = document.getElementById(containerId);
-            container.innerHTML = '';
-            container.appendChild(createFieldElement(dataKey, label, maxLength, hasPosition));
-        }
-
-        function createFieldElement(dataKey, label, maxLength, hasPosition) {
-            const ad = adsData[currentAdIndex];
-            const origText = ad.original[dataKey] || '';
-            const modText = ad.modified[dataKey] || '';
-            const isChanged = origText !== modText;
-            const posKey = `${dataKey} 位置`;
-            let origPos = ad.original[posKey] || '', modPos = ad.modified[posKey] || '', isPosChanged = origPos !== modPos;
-            const wrapper = document.createElement('div');
-            wrapper.className = `p-3 rounded-xl border transition-all ${isChanged || isPosChanged ? 'bg-blue-50/30 border-google-blue shadow-sm' : 'bg-white border-slate-200 hover:border-slate-300'}`;
-            let headerHtml = `<div class="flex justify-between items-center mb-1"><label class="text-xs font-bold text-slate-600">${label}</label>`;
-            if (hasPosition) {
-                const posOptions = [ { val: '', text: '不指定' }, { val: '--', text: '不指定' }, { val: '1', text: '固定在位置 1' }, { val: '2', text: '固定在位置 2' }, { val: '3', text: '固定在位置 3' } ];
-                let optionsHtml = posOptions.map(opt => {
-                    if(dataKey.includes('說明') && opt.val === '3') return ''; 
-                    const selected = (modPos === opt.val || (modPos === '' && opt.val === '--')) ? 'selected' : '';
-                    return `<option value="${opt.val}" ${selected}>${opt.text}</option>`;
-                }).join('');
-                headerHtml += `<select onchange="updateData('${posKey}', this.value)" class="text-xs border rounded p-1 bg-white focus:outline-none focus:border-google-blue ${isPosChanged ? 'border-google-blue text-google-blue font-semibold' : 'border-slate-200 text-slate-500'}">${optionsHtml}</select>`;
-            }
-            headerHtml += `</div>`;
-            let origDisplay = origText === '' ? '(空白)' : origText;
-            wrapper.innerHTML = `
-                ${headerHtml}
-                <div class="text-[11px] mb-1.5 px-1 truncate ${isChanged ? 'original-text-changed' : 'text-slate-400'}">原先內容：${origDisplay}</div>
-                <div class="relative"><input type="text" value="${escapeHtml(modText)}" oninput="updateData('${dataKey}', this.value)" class="w-full px-3 py-2 text-sm rounded-lg border focus:outline-none focus:ring-1 focus:ring-google-blue transition-colors ${isChanged ? 'input-changed' : 'bg-white border-slate-300'}" placeholder="輸入文案..."></div>
-                <div class="text-right text-[10px] mt-1 ${modText.length > maxLength ? 'char-over' : 'text-slate-400'}">${modText.length} / ${maxLength}</div>
-            `;
-            return wrapper;
-        }
-
-        function updateData(key, value) {
-            if (currentAdIndex === null) return;
-            const ad = adsData[currentAdIndex];
-            ad.modified[key] = value;
-            ad.isEdited = checkIfAdEdited(ad);
-            if (key.includes('位置')) selectAd(currentAdIndex); else renderAdList();
-        }
-
-        function checkIfAdEdited(ad) {
-            for (let key in ad.modified) { if ((ad.original[key] || '') !== (ad.modified[key] || '')) return true; }
-            return false;
-        }
-
-        function revertCurrentAd() {
-            if (currentAdIndex === null) return;
-            if (confirm('確定要捨棄此廣告的所有修改嗎？')) {
-                const ad = adsData[currentAdIndex];
-                ad.modified = JSON.parse(JSON.stringify(ad.original));
-                ad.isEdited = false;
-                selectAd(currentAdIndex);
-                showToast('已還原為原先內容');
-            }
-        }
-
-        function exportCSV() {
-            const editedAds = adsData.filter(ad => ad.isEdited);
-            if (editedAds.length === 0) return showToast('尚未修改任何內容，無需匯出。', 'error');
-            const exportData = editedAds.map(ad => {
-                let row = {};
-                rawHeaders.forEach(h => { row[h] = ad.modified[h] !== undefined ? ad.modified[h] : ''; });
-                return row;
-            });
-            const csv = Papa.unparse(exportData);
-            const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement("a");
-            link.setAttribute("href", url);
-            link.setAttribute("download", `GoogleAds_Editor匯出_${new Date().toISOString().slice(0,10).replace(/-/g,"")}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            showToast(`成功匯出 ${exportData.length} 筆修改資料`, 'success');
-        }
-
-        function escapeHtml(unsafe) { return (unsafe || '').toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;"); }
-    </script>
-</body>
-</html>
+                const isActive =
