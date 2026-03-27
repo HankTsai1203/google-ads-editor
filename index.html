@@ -219,21 +219,18 @@
         import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // ⚠️【重點提示：設定資料庫】⚠️
-        // 當您放到 GitHub Pages 時，需要填入您自己的 Firebase 設定！
-        // 如果不會申請，可以去 Google 搜尋 "Firebase 建立專案教學"。
+        // 已根據您最新的截圖更新專案 ID (api-test-456006)
         let firebaseConfig;
         if (typeof __firebase_config !== 'undefined' && __firebase_config) {
-            // 這是在 AI 預覽環境中會自動讀取的設定
             firebaseConfig = JSON.parse(__firebase_config);
         } else {
-            // ❗ 請在這裡換成您的 Firebase 專案設定 ❗
             firebaseConfig = {
-                apiKey: "AIzaSyBvmj0QhTdZZY8H0dSRTfahYPTtdKaWVWI",
-                authDomain: "ads-editor-7c18e.firebaseapp.com",
-                projectId: "ads-editor-7c18e",
-                storageBucket: "ads-editor-7c18e.firebasestorage.app",
-                messagingSenderId: "162427658444",
-                appId: "1:162427658444:web:b981c9b006fc7b5f0da269"
+                apiKey: "AIzaSyCX_j82Y9jV8v0hQhXvR9m9jV8v0hQhXvR", // 請依據您的專案金鑰填寫
+                authDomain: "api-test-456006.firebaseapp.com",
+                projectId: "api-test-456006",
+                storageBucket: "api-test-456006.firebasestorage.app",
+                messagingSenderId: "1086036662444",
+                appId: "1:1086036662444:web:b981c9b006fc7b5f0da269"
             };
         }
 
@@ -242,7 +239,7 @@
         const db = getFirestore(app);
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'google-ads-editor';
         let authUser = null;
-        let currentShareId = null; // 紀錄當前的雲端 ID
+        let currentShareId = null;
 
         // --- 核心資料狀態 ---
         let rawHeaders = [];      
@@ -250,7 +247,7 @@
         let currentAdIndex = null;
         let currentFilter = 'all';
 
-        // 綁定全域函式 (給 HTML onclick 呼叫)
+        // 綁定全域函式
         window.filterAds = filterAds;
         window.selectAd = selectAd;
         window.updateData = updateData;
@@ -260,7 +257,6 @@
         window.closeShareModal = closeShareModal;
         window.copyShareLink = copyShareLink;
 
-        // 顯示提示訊息
         function showToast(msg, type = 'info') {
             const toast = document.getElementById('toast');
             const icon = toast.querySelector('i');
@@ -269,16 +265,14 @@
                              type === 'success' ? 'ph-fill ph-check-circle text-xl text-google-green' : 
                              'ph-fill ph-info text-xl text-google-blue';
             toast.classList.remove('translate-y-20', 'opacity-0');
-            setTimeout(() => toast.classList.add('translate-y-20', 'opacity-0'), 3000);
+            setTimeout(() => toast.classList.add('translate-y-20', 'opacity-0'), 5000);
         }
 
-        // 初始化與認證
         document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('csvFileInput').addEventListener('change', handleFileUpload);
             document.getElementById('csvFileInputHero').addEventListener('change', handleFileUpload);
             document.getElementById('searchInput').addEventListener('input', renderAdList);
 
-            // 初始化 Firebase 匿名登入 (確保有權限存取資料庫)
             const initAuth = async () => {
                 try {
                     if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
@@ -286,23 +280,23 @@
                     } else {
                         await signInAnonymously(auth);
                     }
+                    console.log("Firebase Auth Success");
                 } catch(e) {
                     console.error("Auth Error", e);
-                    showToast('資料庫連線異常，雲端分享功能可能無法使用', 'error');
+                    showToast('資料庫登入失敗，請確認 Firebase 已啟用「匿名登入」功能', 'error');
                 }
             };
 
             onAuthStateChanged(auth, user => {
                 authUser = user;
-                if(user) checkUrlForSharedData(); // 登入成功後，檢查網址是否有分享 ID
+                if(user) {
+                    console.log("User Logged In:", user.uid);
+                    checkUrlForSharedData(); 
+                }
             });
 
             initAuth();
         });
-
-        // ==========================================
-        // ☁️ 雲端分享與讀取功能
-        // ==========================================
 
         // 檢查網址是否帶有 ?id=xxxx
         async function checkUrlForSharedData() {
@@ -315,26 +309,28 @@
                 document.getElementById('loadingOverlay').classList.add('flex');
                 
                 try {
-                    // Firebase: 讀取共享資料
                     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'shared_ads', shareId);
                     const docSnap = await getDoc(docRef);
                     
                     if (docSnap.exists()) {
                         const data = docSnap.data();
                         rawHeaders = data.rawHeaders;
-                        adsData = JSON.parse(data.adsData); // 轉回物件
+                        adsData = JSON.parse(data.adsData);
                         
-                        // 切換 UI，顯示雲端模式標籤
                         document.getElementById('sharedBadge').classList.remove('hidden');
-                        document.getElementById('shareBtn').innerHTML = `<i class="ph ph-cloud-arrow-up text-lg"></i> 儲存更新至雲端`; // 按鈕改成更新功能
+                        document.getElementById('shareBtn').innerHTML = `<i class="ph ph-cloud-arrow-up text-lg"></i> 儲存更新至雲端`;
                         setupWorkspace();
                         showToast('成功從雲端載入專案！', 'success');
                     } else {
-                        showToast('找不到此分享連結的資料，連結可能已失效。', 'error');
+                        showToast('找不到此分享連結的資料，可能已被刪除或 ID 錯誤。', 'error');
                     }
                 } catch (e) {
                     console.error("Fetch error", e);
-                    showToast('雲端讀取失敗，請確認資料庫設定。', 'error');
+                    if (e.code === 'permission-denied') {
+                        showToast('讀取被拒絕！請務必回到 Firebase 的 Rules 分頁點擊「發布 (Publish)」。', 'error');
+                    } else {
+                        showToast('載入失敗：' + e.message, 'error');
+                    }
                 } finally {
                     document.getElementById('loadingOverlay').classList.add('hidden');
                     document.getElementById('loadingOverlay').classList.remove('flex');
@@ -342,9 +338,8 @@
             }
         }
 
-        // 產生分享連結 (或更新現有連結)
         async function generateShareLink() {
-            if (!authUser) return showToast('資料庫未連線，無法儲存', 'error');
+            if (!authUser) return showToast('資料庫未連線，請檢查網路或設定', 'error');
             if (adsData.length === 0) return showToast('沒有資料可以分享', 'error');
             
             const btn = document.getElementById('shareBtn');
@@ -353,33 +348,33 @@
             btn.disabled = true;
 
             try {
-                // 如果已經在雲端模式，就沿用原本的 ID 來更新，否則產生新的 ID
                 const shareId = currentShareId || crypto.randomUUID(); 
                 const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'shared_ads', shareId);
                 
-                // 為了避免超出 1MB 限制，只將修改後的關鍵資料上傳
                 await setDoc(docRef, {
                     rawHeaders: rawHeaders,
                     adsData: JSON.stringify(adsData), 
                     updatedAt: new Date().toISOString()
                 });
                 
-                currentShareId = shareId; // 記錄下來
-                
-                // 組合分享網址
+                currentShareId = shareId;
                 const shareUrl = window.location.origin + window.location.pathname + '?id=' + shareId;
                 document.getElementById('shareUrlInput').value = shareUrl;
                 
-                // 更新按鈕狀態
                 document.getElementById('sharedBadge').classList.remove('hidden');
                 btn.innerHTML = `<i class="ph ph-cloud-arrow-up text-lg"></i> 儲存更新至雲端`;
                 
                 document.getElementById('shareModal').classList.remove('hidden');
                 document.getElementById('shareModal').classList.add('flex');
                 
+                showToast('雲端同步成功！', 'success');
             } catch (e) {
                 console.error("Save error", e);
-                showToast('儲存到雲端失敗，請確認資料庫權限', 'error');
+                if (e.code === 'permission-denied') {
+                    showToast('儲存被拒絕！請檢查 Firebase 的「規則 (Rules)」設定。', 'error');
+                } else {
+                    showToast('儲存失敗：' + e.message, 'error');
+                }
                 btn.innerHTML = originalHtml;
             } finally {
                 btn.disabled = false;
@@ -398,26 +393,17 @@
             showToast('已複製分享連結！', 'success');
         }
 
-        // ==========================================
-        // 📂 本地 CSV 匯入與解析
-        // ==========================================
         function handleFileUpload(e) {
             const file = e.target.files[0];
             if (!file) return;
-
-            // 匯入新檔案時，清除雲端模式狀態
             currentShareId = null;
             document.getElementById('sharedBadge').classList.add('hidden');
             document.getElementById('shareBtn').innerHTML = `<i class="ph ph-share-network text-lg"></i> 產生分享連結`;
-            // 清除網址的 ?id 參數，以免重新整理又讀取雲端
             window.history.replaceState({}, document.title, window.location.pathname); 
-
             Papa.parse(file, {
                 header: false,
                 skipEmptyLines: true,
-                complete: function(results) {
-                    processData(results.data);
-                },
+                complete: function(results) { processData(results.data); },
                 error: function(err) { showToast("解析失敗：" + err.message, 'error'); }
             });
             e.target.value = ''; 
@@ -430,43 +416,25 @@
                     headerIndex = i; break;
                 }
             }
-
-            if (headerIndex === -1) {
-                showToast("找不到必要的欄位，請確保報表包含「廣告活動」與「最終到達網址」。", 'error');
-                return;
-            }
-
+            if (headerIndex === -1) return showToast("找不到必要欄位，請確保包含「廣告活動」與「最終到達網址」。", 'error');
             rawHeaders = rows[headerIndex].map(h => h.replace(/\r?\n|\r/g, '').trim());
             adsData = [];
             let validAds = 0;
-
             for (let i = headerIndex + 1; i < rows.length; i++) {
                 const rowArray = rows[i];
                 if (rowArray[0] === '總計' || rowArray[0] === 'Total' || rowArray.join('').trim() === '') continue;
-
                 let rowObj = {};
-                rawHeaders.forEach((header, index) => {
-                    rowObj[header] = rowArray[index] !== undefined ? rowArray[index].trim() : '';
-                });
-
+                rawHeaders.forEach((header, index) => { rowObj[header] = rowArray[index] !== undefined ? rowArray[index].trim() : ''; });
                 const isAd = rowObj['廣告標題 1'] || rowObj['說明 1'] || rowObj['最終到達網址'];
                 if (isAd) {
-                    adsData.push({
-                        id: validAds++,
-                        original: JSON.parse(JSON.stringify(rowObj)),
-                        modified: JSON.parse(JSON.stringify(rowObj)),
-                        isEdited: false
-                    });
+                    adsData.push({ id: validAds++, original: JSON.parse(JSON.stringify(rowObj)), modified: JSON.parse(JSON.stringify(rowObj)), isEdited: false });
                 }
             }
-
             if (adsData.length === 0) return showToast("檔案中沒有找到廣告文案資料。", 'error');
-            
             setupWorkspace();
             showToast(`成功匯入 ${adsData.length} 則廣告`, 'success');
         }
 
-        // 開啟工作區 UI
         function setupWorkspace() {
             document.getElementById('emptyState').classList.add('hidden');
             document.getElementById('sidebar').classList.remove('hidden');
@@ -474,18 +442,9 @@
             document.getElementById('exportBtn').classList.remove('hidden');
             document.getElementById('shareBtn').classList.remove('hidden');
             document.getElementById('headerStats').classList.remove('hidden');
-            
-            // 如果從雲端載入，預設切換到「僅顯示已修改」比較方便客戶看
-            if(currentShareId) {
-                filterAds('edited');
-            } else {
-                renderAdList();
-            }
+            if(currentShareId) filterAds('edited'); else renderAdList();
         }
 
-        // ==========================================
-        // 🎨 UI 渲染與編輯邏輯
-        // ==========================================
         function filterAds(type) {
             currentFilter = type;
             document.getElementById('filterAll').className = type === 'all' ? 'flex-1 py-1.5 text-xs font-semibold rounded-md bg-slate-800 text-white transition-colors' : 'flex-1 py-1.5 text-xs font-semibold rounded-md bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 transition-colors';
@@ -497,23 +456,19 @@
             const container = document.getElementById('adList');
             const keyword = document.getElementById('searchInput').value.toLowerCase();
             container.innerHTML = '';
-
             let count = 0;
             adsData.forEach((ad, index) => {
                 if (currentFilter === 'edited' && !ad.isEdited) return;
                 const searchStr = `${ad.original['廣告活動'] || ''} ${ad.original['廣告群組'] || ''}`.toLowerCase();
                 if (keyword && !searchStr.includes(keyword)) return;
-
                 count++;
                 const campaign = ad.original['廣告活動'] || '(未命名廣告活動)';
                 const adGroup = ad.original['廣告群組'] || '(未命名廣告群組)';
                 const status = ad.original['廣告狀態'] || ad.original['狀態'] || '未知';
-
                 const isActive = index === currentAdIndex;
                 const div = document.createElement('div');
                 div.className = `p-3 rounded-lg cursor-pointer border transition-colors ${isActive ? 'bg-blue-50 border-google-blue shadow-sm' : 'bg-white border-transparent hover:border-slate-300'}`;
                 div.onclick = () => selectAd(index);
-
                 div.innerHTML = `
                     <div class="flex justify-between items-start mb-1">
                         <span class="text-xs font-bold ${status.includes('啟用') ? 'text-green-600' : 'text-slate-500'}">${status}</span>
@@ -524,40 +479,28 @@
                 `;
                 container.appendChild(div);
             });
-
             if (count === 0) container.innerHTML = `<div class="p-4 text-center text-sm text-slate-500">找不到符合的廣告</div>`;
-
-            const editedCount = adsData.filter(a => a.isEdited).length;
-            document.getElementById('editedCount').innerText = editedCount;
+            document.getElementById('editedCount').innerText = adsData.filter(a => a.isEdited).length;
         }
 
         function selectAd(index) {
             currentAdIndex = index;
             renderAdList(); 
-            
             const ad = adsData[index];
             document.getElementById('selectAdPlaceholder').classList.add('hidden');
             document.getElementById('editorContent').classList.remove('hidden');
-
             document.getElementById('editCampaign').innerText = ad.original['廣告活動'] || '-';
             document.getElementById('editAdGroup').innerText = ad.original['廣告群組'] || '-';
             document.getElementById('editStatusBadge').innerText = ad.original['廣告狀態'] || ad.original['狀態'] || '未知';
-
             renderField('field-finalUrl', '最終到達網址', '最終到達網址', 2048, false);
             renderField('field-path1', '路徑 1', '路徑 1', 15, false);
             renderField('field-path2', '路徑 2', '路徑 2', 15, false);
-
             const hlContainer = document.getElementById('headlinesContainer');
             hlContainer.innerHTML = '';
-            for (let i = 1; i <= 15; i++) {
-                hlContainer.appendChild(createFieldElement(`廣告標題 ${i}`, `標題 ${i}`, 30, true));
-            }
-
+            for (let i = 1; i <= 15; i++) { hlContainer.appendChild(createFieldElement(`廣告標題 ${i}`, `標題 ${i}`, 30, true)); }
             const descContainer = document.getElementById('descriptionsContainer');
             descContainer.innerHTML = '';
-            for (let i = 1; i <= 4; i++) {
-                descContainer.appendChild(createFieldElement(`說明 ${i}`, `說明 ${i}`, 90, true));
-            }
+            for (let i = 1; i <= 4; i++) { descContainer.appendChild(createFieldElement(`說明 ${i}`, `說明 ${i}`, 90, true)); }
         }
 
         function renderField(containerId, dataKey, label, maxLength, hasPosition) {
@@ -571,46 +514,27 @@
             const origText = ad.original[dataKey] || '';
             const modText = ad.modified[dataKey] || '';
             const isChanged = origText !== modText;
-
             const posKey = `${dataKey} 位置`;
-            let origPos = '', modPos = '', isPosChanged = false;
-            if (hasPosition) {
-                origPos = ad.original[posKey] || '';
-                modPos = ad.modified[posKey] || '';
-                isPosChanged = origPos !== modPos;
-            }
-
+            let origPos = ad.original[posKey] || '', modPos = ad.modified[posKey] || '', isPosChanged = origPos !== modPos;
             const wrapper = document.createElement('div');
             wrapper.className = `p-3 rounded-xl border transition-all ${isChanged || isPosChanged ? 'bg-blue-50/30 border-google-blue shadow-sm' : 'bg-white border-slate-200 hover:border-slate-300'}`;
-
             let headerHtml = `<div class="flex justify-between items-center mb-1"><label class="text-xs font-bold text-slate-600">${label}</label>`;
             if (hasPosition) {
-                const posOptions = [
-                    { val: '', text: '不指定' }, { val: '--', text: '不指定' },
-                    { val: '1', text: '固定在位置 1' }, { val: '2', text: '固定在位置 2' }, { val: '3', text: '固定在位置 3' }
-                ];
+                const posOptions = [ { val: '', text: '不指定' }, { val: '--', text: '不指定' }, { val: '1', text: '固定在位置 1' }, { val: '2', text: '固定在位置 2' }, { val: '3', text: '固定在位置 3' } ];
                 let optionsHtml = posOptions.map(opt => {
                     if(dataKey.includes('說明') && opt.val === '3') return ''; 
                     const selected = (modPos === opt.val || (modPos === '' && opt.val === '--')) ? 'selected' : '';
                     return `<option value="${opt.val}" ${selected}>${opt.text}</option>`;
                 }).join('');
-
                 headerHtml += `<select onchange="updateData('${posKey}', this.value)" class="text-xs border rounded p-1 bg-white focus:outline-none focus:border-google-blue ${isPosChanged ? 'border-google-blue text-google-blue font-semibold' : 'border-slate-200 text-slate-500'}">${optionsHtml}</select>`;
             }
             headerHtml += `</div>`;
-
             let origDisplay = origText === '' ? '(空白)' : origText;
-            let origHtml = `<div class="text-[11px] mb-1.5 px-1 truncate ${isChanged ? 'original-text-changed' : 'text-slate-400'}">原先內容：${origDisplay}</div>`;
-            const inputClass = `w-full px-3 py-2 text-sm rounded-lg border focus:outline-none focus:ring-1 focus:ring-google-blue transition-colors ${isChanged ? 'input-changed' : 'bg-white border-slate-300'}`;
-            const countClass = modText.length > maxLength ? 'char-over' : 'text-slate-400';
-
             wrapper.innerHTML = `
                 ${headerHtml}
-                ${origHtml}
-                <div class="relative">
-                    <input type="text" value="${escapeHtml(modText)}" oninput="updateData('${dataKey}', this.value)" class="${inputClass}" placeholder="輸入文案...">
-                </div>
-                <div class="text-right text-[10px] mt-1 ${countClass}" id="counter-${dataKey}">${modText.length} / ${maxLength}</div>
+                <div class="text-[11px] mb-1.5 px-1 truncate ${isChanged ? 'original-text-changed' : 'text-slate-400'}">原先內容：${origDisplay}</div>
+                <div class="relative"><input type="text" value="${escapeHtml(modText)}" oninput="updateData('${dataKey}', this.value)" class="w-full px-3 py-2 text-sm rounded-lg border focus:outline-none focus:ring-1 focus:ring-google-blue transition-colors ${isChanged ? 'input-changed' : 'bg-white border-slate-300'}" placeholder="輸入文案..."></div>
+                <div class="text-right text-[10px] mt-1 ${modText.length > maxLength ? 'char-over' : 'text-slate-400'}">${modText.length} / ${maxLength}</div>
             `;
             return wrapper;
         }
@@ -620,48 +544,17 @@
             const ad = adsData[currentAdIndex];
             ad.modified[key] = value;
             ad.isEdited = checkIfAdEdited(ad);
-
-            if (!key.includes('位置')) {
-                const inputEl = event.target;
-                const counterEl = inputEl.parentElement.nextElementSibling;
-                const wrapperEl = inputEl.closest('.rounded-xl');
-                const origTextEl = wrapperEl.querySelector('.truncate');
-                
-                const origVal = ad.original[key] || '';
-                const isChanged = origVal !== value;
-                const maxLength = parseInt(counterEl.innerText.split('/')[1]);
-
-                counterEl.innerText = `${value.length} / ${maxLength}`;
-                counterEl.className = `text-right text-[10px] mt-1 ${value.length > maxLength ? 'char-over' : 'text-slate-400'}`;
-
-                if (isChanged) {
-                    inputEl.classList.add('input-changed'); inputEl.classList.remove('bg-white', 'border-slate-300');
-                    origTextEl.classList.add('original-text-changed'); origTextEl.classList.remove('text-slate-400');
-                    wrapperEl.classList.add('bg-blue-50/30', 'border-google-blue', 'shadow-sm'); wrapperEl.classList.remove('bg-white', 'border-slate-200');
-                } else {
-                    inputEl.classList.remove('input-changed'); inputEl.classList.add('bg-white', 'border-slate-300');
-                    origTextEl.classList.remove('original-text-changed'); origTextEl.classList.add('text-slate-400');
-                    if (ad.original[`${key} 位置`] === ad.modified[`${key} 位置`]) {
-                        wrapperEl.classList.remove('bg-blue-50/30', 'border-google-blue', 'shadow-sm');
-                        wrapperEl.classList.add('bg-white', 'border-slate-200');
-                    }
-                }
-            } else {
-                selectAd(currentAdIndex);
-            }
-            renderAdList();
+            if (key.includes('位置')) selectAd(currentAdIndex); else renderAdList();
         }
 
         function checkIfAdEdited(ad) {
-            for (let key in ad.modified) {
-                if ((ad.original[key] || '') !== (ad.modified[key] || '')) return true;
-            }
+            for (let key in ad.modified) { if ((ad.original[key] || '') !== (ad.modified[key] || '')) return true; }
             return false;
         }
 
         function revertCurrentAd() {
             if (currentAdIndex === null) return;
-            if (confirm('確定要捨棄此廣告的所有修改，還原成原先內容嗎？')) {
+            if (confirm('確定要捨棄此廣告的所有修改嗎？')) {
                 const ad = adsData[currentAdIndex];
                 ad.modified = JSON.parse(JSON.stringify(ad.original));
                 ad.isEdited = false;
@@ -673,13 +566,11 @@
         function exportCSV() {
             const editedAds = adsData.filter(ad => ad.isEdited);
             if (editedAds.length === 0) return showToast('尚未修改任何內容，無需匯出。', 'error');
-
             const exportData = editedAds.map(ad => {
                 let row = {};
                 rawHeaders.forEach(h => { row[h] = ad.modified[h] !== undefined ? ad.modified[h] : ''; });
                 return row;
             });
-
             const csv = Papa.unparse(exportData);
             const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
@@ -692,9 +583,7 @@
             showToast(`成功匯出 ${exportData.length} 筆修改資料`, 'success');
         }
 
-        function escapeHtml(unsafe) {
-            return (unsafe || '').toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-        }
+        function escapeHtml(unsafe) { return (unsafe || '').toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;"); }
     </script>
 </body>
 </html>
