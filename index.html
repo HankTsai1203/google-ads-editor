@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google Ads 文案批量編輯器</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- PapaParse for CSV parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        google: { blue: '#4285F4', red: '#EA4335', yellow: '#FBBC05', green: '#34A853', gray: '#F8F9FA' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        .char-over { color: #EA4335 !important; font-weight: bold; }
+        .input-changed { border-color: #4285F4 !important; background-color: #F0F4FF !important; }
+        .original-text-changed { text-decoration: line-through; color: #94A3B8; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans h-screen flex flex-col overflow-hidden">
+
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b border-slate-200 shrink-0 h-16 z-10 flex justify-between items-center px-6">
+        <div class="flex items-center gap-3">
+            <div class="bg-blue-100 p-2 rounded-lg text-google-blue">
+                <i class="ph-fill ph-pen-nib text-2xl"></i>
+            </div>
+            <div>
+                <h1 class="text-lg font-bold text-slate-800 leading-tight">廣告文案編輯器</h1>
+                <p class="text-xs text-slate-500">Google Ads Editor 格式相容</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-4">
+            <span id="headerStats" class="text-sm text-slate-500 hidden">已修改 <strong class="text-google-blue" id="editedCount">0</strong> 則廣告</span>
+            
+            <label for="csvFileInput" class="cursor-pointer bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 border border-slate-300">
+                <i class="ph ph-folder-open text-lg"></i> 匯入報表
+            </label>
+            <input type="file" id="csvFileInput" accept=".csv" class="hidden">
+
+            <button id="exportBtn" onclick="exportCSV()" class="hidden bg-google-blue hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm flex items-center gap-2 disabled:opacity-50">
+                <i class="ph ph-download-simple text-lg"></i> 匯出修改 (Editor格式)
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="flex-1 flex overflow-hidden">
+        
+        <!-- Empty State -->
+        <div id="emptyState" class="w-full h-full flex flex-col items-center justify-center bg-slate-50 z-20 absolute inset-y-16 inset-x-0">
+            <div class="bg-white p-10 rounded-2xl shadow-sm border border-slate-200 text-center max-w-lg">
+                <i class="ph-fill ph-file-csv text-6xl text-google-blue mb-4"></i>
+                <h2 class="text-2xl font-bold text-slate-800 mb-2">匯入報表開始編輯</h2>
+                <p class="text-slate-500 mb-6">請點擊右上方匯入從 Google Ads 下載的廣告報表（需包含廣告標題與說明欄位）。編輯完成後可直接匯出供 Google Ads Editor 上傳使用。</p>
+                <label for="csvFileInputHero" class="cursor-pointer inline-flex items-center justify-center gap-2 bg-google-blue hover:bg-blue-600 text-white px-6 py-3 rounded-xl font-medium transition-all shadow-md hover:shadow-lg">
+                    <i class="ph ph-upload-simple text-xl"></i> 選擇 CSV 檔案
+                </label>
+                <input type="file" id="csvFileInputHero" accept=".csv" class="hidden">
+            </div>
+        </div>
+
+        <!-- Sidebar (Ad List) -->
+        <aside id="sidebar" class="w-1/3 max-w-md bg-white border-r border-slate-200 flex flex-col hidden shrink-0 z-10">
+            <div class="p-4 border-b border-slate-200 bg-slate-50">
+                <div class="relative">
+                    <i class="ph ph-magnifying-glass absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"></i>
+                    <input type="text" id="searchInput" placeholder="搜尋廣告活動或群組..." class="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-google-blue focus:ring-1 focus:ring-google-blue transition-all">
+                </div>
+                <div class="flex gap-2 mt-3">
+                    <button onclick="filterAds('all')" id="filterAll" class="flex-1 py-1.5 text-xs font-semibold rounded-md bg-slate-800 text-white transition-colors">全部顯示</button>
+                    <button onclick="filterAds('edited')" id="filterEdited" class="flex-1 py-1.5 text-xs font-semibold rounded-md bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 transition-colors">僅顯示已修改</button>
+                </div>
+            </div>
+            <div id="adList" class="flex-1 overflow-y-auto p-2 space-y-1">
+                <!-- Ad list items will be injected here -->
+            </div>
+        </aside>
+
+        <!-- Editor Panel -->
+        <section id="editorPanel" class="flex-1 bg-slate-50 flex flex-col hidden relative overflow-hidden">
+            <!-- Select Ad Placeholder -->
+            <div id="selectAdPlaceholder" class="absolute inset-0 flex flex-col items-center justify-center text-slate-400">
+                <i class="ph ph-cursor-click text-6xl mb-3 opacity-50"></i>
+                <p class="text-lg font-medium">請從左側列表選擇一則廣告開始編輯</p>
+            </div>
+
+            <!-- Editor Content -->
+            <div id="editorContent" class="hidden flex-1 flex flex-col overflow-hidden">
+                <!-- Editor Header (Sticky) -->
+                <div class="bg-white p-5 border-b border-slate-200 shadow-sm shrink-0">
+                    <div class="flex justify-between items-start mb-2">
+                        <div>
+                            <span class="inline-block px-2 py-1 bg-blue-50 text-google-blue text-xs font-bold rounded mb-2" id="editStatusBadge">廣告狀態</span>
+                            <h2 class="text-xl font-bold text-slate-800 break-words" id="editAdGroup">廣告群組名稱</h2>
+                            <p class="text-sm text-slate-500 flex items-center gap-1 mt-1">
+                                <i class="ph-fill ph-folder"></i> <span id="editCampaign">廣告活動名稱</span>
+                            </p>
+                        </div>
+                        <button onclick="revertCurrentAd()" class="text-sm flex items-center gap-1 text-slate-500 hover:text-google-red transition-colors px-3 py-1.5 rounded-lg hover:bg-red-50 border border-transparent hover:border-red-100">
+                            <i class="ph ph-arrow-counter-clockwise"></i> 復原此廣告所有修改
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Editor Form (Scrollable) -->
+                <div class="flex-1 overflow-y-auto p-6">
+                    <div class="max-w-4xl mx-auto space-y-8 pb-20">
+                        
+                        <!-- URL Section -->
+                        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                            <div class="bg-slate-50 px-4 py-3 border-b border-slate-200 flex items-center gap-2">
+                                <i class="ph-fill ph-link text-slate-400"></i>
+                                <h3 class="font-bold text-slate-700">網址與路徑</h3>
+                            </div>
+                            <div class="p-5 space-y-4">
+                                <!-- Final URL -->
+                                <div id="field-finalUrl"></div>
+                                
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div id="field-path1"></div>
+                                    <div id="field-path2"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Headlines Section -->
+                        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                            <div class="bg-slate-50 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    <i class="ph-fill ph-text-h text-slate-400"></i>
+                                    <h3 class="font-bold text-slate-700">廣告標題 <span class="text-xs font-normal text-slate-500 ml-1">(最多 30 個字元)</span></h3>
+                                </div>
+                            </div>
+                            <div class="p-5 grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5" id="headlinesContainer">
+                                <!-- Headlines injected here -->
+                            </div>
+                        </div>
+
+                        <!-- Descriptions Section -->
+                        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                            <div class="bg-slate-50 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    <i class="ph-fill ph-article text-slate-400"></i>
+                                    <h3 class="font-bold text-slate-700">廣告說明 <span class="text-xs font-normal text-slate-500 ml-1">(最多 90 個字元)</span></h3>
+                                </div>
+                            </div>
+                            <div class="p-5 space-y-5" id="descriptionsContainer">
+                                <!-- Descriptions injected here -->
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Toast -->
+    <div id="toast" class="fixed bottom-5 right-5 transform translate-y-20 opacity-0 transition-all duration-300 bg-slate-800 text-white px-6 py-3 rounded-lg shadow-xl flex items-center gap-3 z-50">
+        <i class="ph ph-info text-xl text-google-blue"></i>
+        <span id="toastMsg">訊息</span>
+    </div>
+
+    <script>
+        // --- 核心資料狀態 ---
+        let rawHeaders = [];      // 匯出時需要保持原來的欄位順序與名稱
+        let adsData = [];         // 陣列，存放解析後的廣告物件
+        let currentAdIndex = null;// 目前編輯中的廣告索引
+        let currentFilter = 'all';// 'all' 或 'edited'
+
+        // 綁定檔案上傳事件 (兩個按鈕都綁)
+        document.getElementById('csvFileInput').addEventListener('change', handleFileUpload);
+        document.getElementById('csvFileInputHero').addEventListener('change', handleFileUpload);
+        document.getElementById('searchInput').addEventListener('input', renderAdList);
+
+        function showToast(msg, type = 'info') {
+            const toast = document.getElementById('toast');
+            const icon = toast.querySelector('i');
+            document.getElementById('toastMsg').innerText = msg;
+            
+            icon.className = type === 'error' ? 'ph-fill ph-warning-circle text-xl text-google-red' : 
+                             type === 'success' ? 'ph-fill ph-check-circle text-xl text-google-green' : 
+                             'ph-fill ph-info text-xl text-google-blue';
+
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            setTimeout(() => toast.classList.add('translate-y-20', 'opacity-0'), 3000);
+        }
+
+        // --- 處理檔案上傳與解析 ---
+        function handleFileUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            Papa.parse(file, {
+                header: false,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    processData(results.data);
+                },
+                error: function(err) {
+                    showToast("解析失敗：" + err.message, 'error');
+                }
+            });
+            e.target.value = ''; // Reset
+        }
+
+        function processData(rows) {
+            // 尋找真正的標題列
+            let headerIndex = -1;
+            for (let i = 0; i < Math.min(10, rows.length); i++) {
+                if (rows[i].includes("廣告活動") && rows[i].includes("最終到達網址")) {
+                    headerIndex = i;
+                    break;
+                }
+            }
+
+            if (headerIndex === -1) {
+                showToast("找不到必要的欄位。請確保報表包含「廣告活動」與「最終到達網址」。", 'error');
+                return;
+            }
+
+            rawHeaders = rows[headerIndex].map(h => h.replace(/\r?\n|\r/g, '').trim());
+            adsData = [];
+            let validAds = 0;
+
+            for (let i = headerIndex + 1; i < rows.length; i++) {
+                const rowArray = rows[i];
+                if (rowArray[0] === '總計' || rowArray[0] === 'Total' || rowArray.join('').trim() === '') continue;
+
+                let rowObj = {};
+                rawHeaders.forEach((header, index) => {
+                    rowObj[header] = rowArray[index] !== undefined ? rowArray[index].trim() : '';
+                });
+
+                // 過濾出真正有文案的廣告 (排除純報表層級列)
+                const isAd = rowObj['廣告標題 1'] || rowObj['說明 1'] || rowObj['最終到達網址'];
+                if (isAd) {
+                    adsData.push({
+                        id: validAds++,
+                        original: JSON.parse(JSON.stringify(rowObj)),
+                        modified: JSON.parse(JSON.stringify(rowObj)),
+                        isEdited: false
+                    });
+                }
+            }
+
+            if (adsData.length === 0) {
+                showToast("檔案中沒有找到廣告文案資料。", 'error');
+                return;
+            }
+
+            // 切換 UI 狀態
+            document.getElementById('emptyState').classList.add('hidden');
+            document.getElementById('sidebar').classList.remove('hidden');
+            document.getElementById('editorPanel').classList.remove('hidden');
+            document.getElementById('exportBtn').classList.remove('hidden');
+            document.getElementById('headerStats').classList.remove('hidden');
+
+            renderAdList();
+            showToast(`成功匯入 ${adsData.length} 則廣告`, 'success');
+        }
+
+        // --- 渲染側邊欄廣告清單 ---
+        function filterAds(type) {
+            currentFilter = type;
+            document.getElementById('filterAll').className = type === 'all' ? 'flex-1 py-1.5 text-xs font-semibold rounded-md bg-slate-800 text-white transition-colors' : 'flex-1 py-1.5 text-xs font-semibold rounded-md bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 transition-colors';
+            document.getElementById('filterEdited').className = type === 'edited' ? 'flex-1 py-1.5 text-xs font-semibold rounded-md bg-slate-800 text-white transition-colors' : 'flex-1 py-1.5 text-xs font-semibold rounded-md bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 transition-colors';
+            renderAdList();
+        }
+
+        function renderAdList() {
+            const container = document.getElementById('adList');
+            const keyword = document.getElementById('searchInput').value.toLowerCase();
+            container.innerHTML = '';
+
+            let count = 0;
+            adsData.forEach((ad, index) => {
+                // 篩選邏輯
+                if (currentFilter === 'edited' && !ad.isEdited) return;
+                const searchStr = `${ad.original['廣告活動'] || ''} ${ad.original['廣告群組'] || ''}`.toLowerCase();
+                if (keyword && !searchStr.includes(keyword)) return;
+
+                count++;
+                const campaign = ad.original['廣告活動'] || '(未命名廣告活動)';
+                const adGroup = ad.original['廣告群組'] || '(未命名廣告群組)';
+                const status = ad.original['廣告狀態'] || ad.original['狀態'] || '未知';
+
+                const isActive = index === currentAdIndex;
+                const div = document.createElement('div');
+                div.className = `p-3 rounded-lg cursor-pointer border transition-colors ${isActive ? 'bg-blue-50 border-google-blue shadow-sm' : 'bg-white border-transparent hover:border-slate-300'}`;
+                div.onclick = () => selectAd(index);
+
+                div.innerHTML = `
+                    <div class="flex justify-between items-start mb-1">
+                        <span class="text-xs font-bold ${status.includes('啟用') ? 'text-green-600' : 'text-slate-500'}">${status}</span>
+                        ${ad.isEdited ? '<span class="text-[10px] bg-google-yellow text-yellow-900 px-1.5 py-0.5 rounded font-bold">已修改</span>' : ''}
+                    </div>
+                    <div class="text-sm font-bold text-slate-800 truncate">${adGroup}</div>
+                    <div class="text-xs text-slate-500 truncate mt-0.5">${campaign}</div>
+                `;
+                container.appendChild(div);
+            });
+
+            if (count === 0) {
+                container.innerHTML = `<div class="p-4 text-center text-sm text-slate-500">找不到符合的廣告</div>`;
+            }
+
+            // 更新已修改計數
+            const editedCount = adsData.filter(a => a.isEdited).length;
+            document.getElementById('editedCount').innerText = editedCount;
+        }
+
+        // --- 選擇並載入廣告到編輯器 ---
+        function selectAd(index) {
+            currentAdIndex = index;
+            renderAdList(); // 重新渲染列表以更新選取狀態
+            
+            const ad = adsData[index];
+            document.getElementById('selectAdPlaceholder').classList.add('hidden');
+            document.getElementById('editorContent').classList.remove('hidden');
+
+            document.getElementById('editCampaign').innerText = ad.original['廣告活動'] || '-';
+            document.getElementById('editAdGroup').innerText = ad.original['廣告群組'] || '-';
+            document.getElementById('editStatusBadge').innerText = ad.original['廣告狀態'] || ad.original['狀態'] || '未知';
+
+            // 渲染各個欄位區塊
+            renderField('field-finalUrl', '最終到達網址', '最終到達網址', 2048, false);
+            renderField('field-path1', '路徑 1', '路徑 1', 15, false);
+            renderField('field-path2', '路徑 2', '路徑 2', 15, false);
+
+            const hlContainer = document.getElementById('headlinesContainer');
+            hlContainer.innerHTML = '';
+            for (let i = 1; i <= 15; i++) {
+                hlContainer.appendChild(createFieldElement(`廣告標題 ${i}`, `標題 ${i}`, 30, true));
+            }
+
+            const descContainer = document.getElementById('descriptionsContainer');
+            descContainer.innerHTML = '';
+            for (let i = 1; i <= 4; i++) {
+                descContainer.appendChild(createFieldElement(`說明 ${i}`, `說明 ${i}`, 90, true));
+            }
+        }
+
+        // --- 動態生成輸入欄位元件 ---
+        function renderField(containerId, dataKey, label, maxLength, hasPosition) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+            container.appendChild(createFieldElement(dataKey, label, maxLength, hasPosition));
+        }
+
+        function createFieldElement(dataKey, label, maxLength, hasPosition) {
+            const ad = adsData[currentAdIndex];
+            const origText = ad.original[dataKey] || '';
+            const modText = ad.modified[dataKey] || '';
+            const isChanged = origText !== modText;
+
+            // 處理固定位置 (Pinning)
+            const posKey = `${dataKey} 位置`;
+            let origPos = '', modPos = '';
+            let isPosChanged = false;
+            if (hasPosition) {
+                origPos = ad.original[posKey] || '';
+                modPos = ad.modified[posKey] || '';
+                isPosChanged = origPos !== modPos;
+            }
+
+            const wrapper = document.createElement('div');
+            wrapper.className = `p-3 rounded-xl border transition-all ${isChanged || isPosChanged ? 'bg-blue-50/30 border-google-blue shadow-sm' : 'bg-white border-slate-200 hover:border-slate-300'}`;
+
+            // Header (Label + Position Select if applicable)
+            let headerHtml = `<div class="flex justify-between items-center mb-1">
+                <label class="text-xs font-bold text-slate-600">${label}</label>`;
+            
+            if (hasPosition) {
+                const posOptions = [
+                    { val: '', text: '不指定' },
+                    { val: '--', text: '不指定' },
+                    { val: '1', text: '固定在位置 1' },
+                    { val: '2', text: '固定在位置 2' },
+                    { val: '3', text: '固定在位置 3' }
+                ];
+                // Google Ads 中「說明」通常只有位置 1, 2
+                let optionsHtml = posOptions.map(opt => {
+                    // 若是說明，隱藏位置3
+                    if(dataKey.includes('說明') && opt.val === '3') return ''; 
+                    const selected = (modPos === opt.val || (modPos === '' && opt.val === '--')) ? 'selected' : '';
+                    return `<option value="${opt.val}" ${selected}>${opt.text}</option>`;
+                }).join('');
+
+                headerHtml += `<select onchange="updateData('${posKey}', this.value)" class="text-xs border rounded p-1 bg-white focus:outline-none focus:border-google-blue ${isPosChanged ? 'border-google-blue text-google-blue font-semibold' : 'border-slate-200 text-slate-500'}">
+                    ${optionsHtml}
+                </select>`;
+            }
+            headerHtml += `</div>`;
+
+            // Original Text Display
+            let origDisplay = origText === '' ? '(空白)' : origText;
+            let origHtml = `<div class="text-[11px] mb-1.5 px-1 truncate ${isChanged ? 'original-text-changed' : 'text-slate-400'}">原先內容：${origDisplay}</div>`;
+
+            // Input Field
+            const inputClass = `w-full px-3 py-2 text-sm rounded-lg border focus:outline-none focus:ring-1 focus:ring-google-blue transition-colors ${isChanged ? 'input-changed' : 'bg-white border-slate-300'}`;
+            
+            // Character Counter
+            const countClass = modText.length > maxLength ? 'char-over' : 'text-slate-400';
+
+            wrapper.innerHTML = `
+                ${headerHtml}
+                ${origHtml}
+                <div class="relative">
+                    <input type="text" value="${escapeHtml(modText)}" 
+                           oninput="updateData('${dataKey}', this.value)" 
+                           class="${inputClass}" 
+                           placeholder="輸入文案...">
+                </div>
+                <div class="text-right text-[10px] mt-1 ${countClass}" id="counter-${dataKey}">${modText.length} / ${maxLength}</div>
+            `;
+
+            return wrapper;
+        }
+
+        // --- 資料更新邏輯 ---
+        function updateData(key, value) {
+            if (currentAdIndex === null) return;
+            const ad = adsData[currentAdIndex];
+            
+            // 如果輸入的是 '--' 但原始是空，我們視為一樣 (Google Ads 報表常有的狀況)
+            ad.modified[key] = value;
+
+            // 檢查整則廣告是否有任何修改
+            ad.isEdited = checkIfAdEdited(ad);
+
+            // 如果是在輸入框，局部更新 UI 而不重新渲染整個面板，以免失去焦點
+            if (!key.includes('位置')) {
+                const inputEl = event.target;
+                const counterEl = inputEl.parentElement.nextElementSibling;
+                const wrapperEl = inputEl.closest('.rounded-xl');
+                const origTextEl = wrapperEl.querySelector('.truncate');
+                
+                const origVal = ad.original[key] || '';
+                const isChanged = origVal !== value;
+                const maxLength = parseInt(counterEl.innerText.split('/')[1]);
+
+                // Update Counter
+                counterEl.innerText = `${value.length} / ${maxLength}`;
+                counterEl.className = `text-right text-[10px] mt-1 ${value.length > maxLength ? 'char-over' : 'text-slate-400'}`;
+
+                // Update Styles
+                if (isChanged) {
+                    inputEl.classList.add('input-changed');
+                    inputEl.classList.remove('bg-white', 'border-slate-300');
+                    origTextEl.classList.add('original-text-changed');
+                    origTextEl.classList.remove('text-slate-400');
+                    wrapperEl.classList.add('bg-blue-50/30', 'border-google-blue', 'shadow-sm');
+                    wrapperEl.classList.remove('bg-white', 'border-slate-200');
+                } else {
+                    inputEl.classList.remove('input-changed');
+                    inputEl.classList.add('bg-white', 'border-slate-300');
+                    origTextEl.classList.remove('original-text-changed');
+                    origTextEl.classList.add('text-slate-400');
+                    // 只有當位置也沒變時才移除外框高亮
+                    const posKey = `${key} 位置`;
+                    if (ad.original[posKey] === ad.modified[posKey]) {
+                        wrapperEl.classList.remove('bg-blue-50/30', 'border-google-blue', 'shadow-sm');
+                        wrapperEl.classList.add('bg-white', 'border-slate-200');
+                    }
+                }
+            } else {
+                // 如果是改下拉選單(位置)，直接重新渲染整個廣告面板最簡單
+                selectAd(currentAdIndex);
+            }
+
+            // 更新側邊欄 (Debounce it visually by updating counts directly if possible, but rendering is fast enough for list)
+            renderAdList();
+        }
+
+        function checkIfAdEdited(ad) {
+            for (let key in ad.modified) {
+                // 忽略一些無關緊要的報表差異
+                let orig = ad.original[key] || '';
+                let mod = ad.modified[key] || '';
+                if (orig !== mod) return true;
+            }
+            return false;
+        }
+
+        function revertCurrentAd() {
+            if (currentAdIndex === null) return;
+            if (confirm('確定要捨棄此廣告的所有修改，還原成原先內容嗎？')) {
+                const ad = adsData[currentAdIndex];
+                ad.modified = JSON.parse(JSON.stringify(ad.original));
+                ad.isEdited = false;
+                selectAd(currentAdIndex);
+                showToast('已還原為原先內容');
+            }
+        }
+
+        // --- 匯出 CSV 供 Google Ads Editor 使用 ---
+        function exportCSV() {
+            const editedAds = adsData.filter(ad => ad.isEdited);
+            if (editedAds.length === 0) {
+                showToast('尚未修改任何內容，無需匯出。', 'error');
+                return;
+            }
+
+            // 準備匯出資料：我們只匯出有修改的廣告，並保留原始的欄位名稱
+            const exportData = editedAds.map(ad => {
+                // 回傳修改後的物件，並確保欄位順序與原始匯入的一致
+                let row = {};
+                rawHeaders.forEach(h => {
+                    row[h] = ad.modified[h] !== undefined ? ad.modified[h] : '';
+                });
+                return row;
+            });
+
+            // 使用 PapaParse 轉回 CSV
+            const csv = Papa.unparse(exportData);
+            
+            // 加入 BOM 讓 Excel 正常顯示中文
+            const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            
+            const dateStr = new Date().toISOString().slice(0,10).replace(/-/g,"");
+            link.setAttribute("href", url);
+            link.setAttribute("download", `GoogleAds_Editor匯出_${dateStr}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            showToast(`成功匯出 ${exportData.length} 筆修改資料`, 'success');
+        }
+
+        // Utility: XSS 防護
+        function escapeHtml(unsafe) {
+            return (unsafe || '').toString()
+                 .replace(/&/g, "&amp;")
+                 .replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;")
+                 .replace(/"/g, "&quot;")
+                 .replace(/'/g, "&#039;");
+        }
+    </script>
+</body>
+</html>
