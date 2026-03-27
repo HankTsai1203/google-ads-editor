@@ -162,7 +162,7 @@
                                     <h3 class="font-bold text-slate-700">廣告標題 <span class="text-xs font-normal text-slate-500 ml-1">(最多 30 個字元)</span></h3>
                                 </div>
                             </div>
-                            <!-- 改為雙欄顯示 -->
+                            <!-- 雙欄顯示設定 -->
                             <div class="p-5 grid grid-cols-1 lg:grid-cols-2 gap-5" id="headlinesContainer">
                             </div>
                         </div>
@@ -217,25 +217,28 @@
         import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // ⚠️【重點提示：請務必填寫正確金鑰】⚠️
-        let firebaseConfig;
-        if (typeof __firebase_config !== 'undefined' && __firebase_config) {
-            firebaseConfig = JSON.parse(__firebase_config);
-        } else {
-            firebaseConfig = {
-                // ❗ 請從您的 Firebase 控制台複製「正確且完整」的金鑰貼在下方 ❗
-                apiKey: "AIzaSy...", // 這裡必須換成您在截圖中看到的真實 apiKey
-                authDomain: "api-test-456006.firebaseapp.com",
-                projectId: "api-test-456006",
-                storageBucket: "api-test-456006.firebasestorage.app",
-                messagingSenderId: "1086036662444",
-                appId: "1:1086036662444:web:b981c9b006fc7b5f0da269"
-            };
+        // ⚠️【核心設定：請務必填寫您的正確金鑰】⚠️
+        const firebaseConfig = {
+            // ❗ 請把下方 apiKey 換成您在 Firebase 截圖看到的「真實一長串英文數字」 ❗
+            // ⚠️ 目前內容是範例，不換掉的話雲端功能會失效喔！
+            apiKey: "AIzaSy...", 
+            authDomain: "api-test-456006.firebaseapp.com",
+            projectId: "api-test-456006",
+            storageBucket: "api-test-456006.firebasestorage.app",
+            messagingSenderId: "1086036662444",
+            appId: "1:1086036662444:web:b981c9b006fc7b5f0da269"
+        };
+
+        // 嘗試初始化 Firebase，失敗也不要影響主程式
+        let app, auth, db;
+        try {
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+        } catch (e) {
+            console.error("Firebase 初始化失敗，請檢查金鑰格式是否正確", e);
         }
 
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'google-ads-editor';
         let authUser = null;
         let currentShareId = null;
@@ -245,6 +248,7 @@
         let currentAdIndex = null;
         let currentFilter = 'all';
 
+        // 綁定函式到 window
         window.filterAds = filterAds;
         window.selectAd = selectAd;
         window.updateData = updateData;
@@ -270,37 +274,31 @@
             document.getElementById('csvFileInputHero').addEventListener('change', handleFileUpload);
             document.getElementById('searchInput').addEventListener('input', renderAdList);
 
-            const initAuth = async () => {
-                try {
-                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                        await signInWithCustomToken(auth, __initial_auth_token);
-                    } else {
-                        // 嘗試匿名登入
+            if (auth) {
+                const initAuth = async () => {
+                    try {
                         await signInAnonymously(auth);
+                        console.log("Firebase 認證成功");
+                    } catch(e) {
+                        console.error("Firebase 認證錯誤:", e);
+                        if (firebaseConfig.apiKey === "AIzaSy...") {
+                            showToast('⚠️ 請在 index.html 程式碼底部填入您正確的 Firebase apiKey，否則無法使用分享功能！', 'error');
+                        } else {
+                            showToast(`資料庫連線失敗：${e.code}`, 'error');
+                        }
                     }
-                    console.log("Firebase Auth Success");
-                } catch(e) {
-                    console.error("Auth Error Detail:", e);
-                    // 強化錯誤顯示：顯示具體代碼方便除錯
-                    const errorMsg = e.code === 'auth/invalid-api-key' ? 'API 金鑰錯誤 (apiKey 填錯了)' : 
-                                    e.code === 'auth/operation-not-allowed' ? '匿名登入未在 Firebase 啟用' : 
-                                    `登入失敗: ${e.code}`;
-                    showToast(`資料庫連線失敗：${errorMsg}。請檢查程式碼底部的 firebaseConfig 設定。`, 'error');
-                }
-            };
-
-            onAuthStateChanged(auth, user => {
-                authUser = user;
-                if(user) {
-                    console.log("User Logged In:", user.uid);
-                    checkUrlForSharedData(); 
-                }
-            });
-
-            initAuth();
+                };
+                onAuthStateChanged(auth, user => {
+                    authUser = user;
+                    if(user) checkUrlForSharedData(); 
+                });
+                initAuth();
+            }
         });
 
+        // 下列功能皆增加判斷，避免 Firebase 未初始化時當機
         async function checkUrlForSharedData() {
+            if (!db) return;
             const urlParams = new URLSearchParams(window.location.search);
             const shareId = urlParams.get('id');
             if (shareId && authUser) {
@@ -322,12 +320,8 @@
                         showToast('找不到此分享連結的資料。', 'error');
                     }
                 } catch (e) {
-                    console.error("Fetch error", e);
-                    if (e.code === 'permission-denied') {
-                        showToast('讀取被拒絕！請務必回到 Firebase 的 Rules 分頁點擊「發布 (Publish)」。', 'error');
-                    } else {
-                        showToast('載入失敗：' + e.message, 'error');
-                    }
+                    console.error("載入失敗", e);
+                    showToast('載入失敗：' + e.message, 'error');
                 } finally {
                     document.getElementById('loadingOverlay').classList.add('hidden');
                     document.getElementById('loadingOverlay').classList.remove('flex');
@@ -336,7 +330,7 @@
         }
 
         async function generateShareLink() {
-            if (!authUser) return showToast('資料庫未連線，無法產生連結', 'error');
+            if (!auth || !db || !authUser) return showToast('資料庫未連線，無法產生連結。請檢查程式碼底部的 apiKey 設定。', 'error');
             const btn = document.getElementById('shareBtn');
             const originalHtml = btn.innerHTML;
             btn.innerHTML = `<i class="ph ph-spinner animate-spin"></i> 處理中...`;
@@ -358,7 +352,7 @@
                 document.getElementById('shareModal').classList.add('flex');
                 showToast('雲端同步成功！', 'success');
             } catch (e) {
-                console.error("Save error", e);
+                console.error("儲存失敗", e);
                 showToast(`儲存失敗: ${e.code}`, 'error');
                 btn.innerHTML = originalHtml;
             } finally {
@@ -378,76 +372,63 @@
             showToast('已複製分享連結！', 'success');
         }
 
+        // 📂 文件匯入功能 (確保不受 Firebase 影響)
         function handleFileUpload(e) {
             const file = e.target.files[0];
             if (!file) return;
+            
+            // 恢復 UI 狀態
             currentShareId = null;
             document.getElementById('sharedBadge').classList.add('hidden');
             document.getElementById('shareBtn').innerHTML = `<i class="ph ph-share-network text-lg"></i> 產生分享連結`;
             window.history.replaceState({}, document.title, window.location.pathname); 
+
             Papa.parse(file, {
                 header: false,
                 skipEmptyLines: true,
                 complete: function(results) { processData(results.data); },
-                error: function(err) { showToast("解析失敗：" + err.message, 'error'); }
+                error: function(err) { showToast("CSV 解析失敗：" + err.message, 'error'); }
             });
             e.target.value = ''; 
         }
 
         function processData(rows) {
             let headerIndex = -1;
-            for (let i = 0; i < Math.min(10, rows.length); i++) {
-                if (rows[i].includes("廣告活動") && rows[i].includes("最終到達網址")) {
+            // 搜尋包含廣告關鍵欄位的標題列
+            for (let i = 0; i < Math.min(20, rows.length); i++) {
+                if (rows[i].includes("廣告活動") || rows[i].includes("最終到達網址")) {
                     headerIndex = i; break;
                 }
             }
-            if (headerIndex === -1) return showToast("找不到必要欄位。", 'error');
+            if (headerIndex === -1) return showToast("CSV 格式不正確，找不到『廣告活動』或『最終到達網址』欄位。", 'error');
+            
             rawHeaders = rows[headerIndex].map(h => h.replace(/\r?\n|\r/g, '').trim());
             adsData = [];
             let validAds = 0;
+            
             for (let i = headerIndex + 1; i < rows.length; i++) {
                 const rowArray = rows[i];
-                if (rowArray[0] === '總計' || rowArray[0] === 'Total' || rowArray.join('').trim() === '') continue;
+                if (!rowArray || rowArray.length < 2 || rowArray[0] === '總計' || rowArray[0] === 'Total') continue;
+                
                 let rowObj = {};
-                rawHeaders.forEach((header, index) => { rowObj[header] = rowArray[index] !== undefined ? rowArray[index].trim() : ''; });
-                const isAd = rowObj['廣告標題 1'] || rowObj['說明 1'] || rowObj['最終到達網址'];
-                if (isAd) {
-                    adsData.push({ id: validAds++, original: JSON.parse(JSON.stringify(rowObj)), modified: JSON.parse(JSON.stringify(rowObj)), isEdited: false });
+                rawHeaders.forEach((header, index) => { 
+                    rowObj[header] = rowArray[index] !== undefined ? rowArray[index].trim() : ''; 
+                });
+                
+                const hasContent = rowObj['廣告標題 1'] || rowObj['說明 1'] || rowObj['最終到達網址'];
+                if (hasContent) {
+                    adsData.push({ 
+                        id: validAds++, 
+                        original: JSON.parse(JSON.stringify(rowObj)), 
+                        modified: JSON.parse(JSON.stringify(rowObj)), 
+                        isEdited: false 
+                    });
                 }
             }
-            if (adsData.length === 0) return showToast("找不到廣告文案。", 'error');
+            
+            if (adsData.length === 0) return showToast("檔案中沒有找到有效的廣告文案內容。", 'error');
             setupWorkspace();
             showToast(`成功匯入 ${adsData.length} 則廣告`, 'success');
         }
 
-        function setupWorkspace() {
-            document.getElementById('emptyState').classList.add('hidden');
-            document.getElementById('sidebar').classList.remove('hidden');
-            document.getElementById('editorPanel').classList.remove('hidden');
-            document.getElementById('exportBtn').classList.remove('hidden');
-            document.getElementById('shareBtn').classList.remove('hidden');
-            document.getElementById('headerStats').classList.remove('hidden');
-            if(currentShareId) filterAds('edited'); else renderAdList();
-        }
-
-        function filterAds(type) {
-            currentFilter = type;
-            document.getElementById('filterAll').className = type === 'all' ? 'flex-1 py-1.5 text-xs font-semibold rounded-md bg-slate-800 text-white transition-colors' : 'flex-1 py-1.5 text-xs font-semibold rounded-md bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 transition-colors';
-            document.getElementById('filterEdited').className = type === 'edited' ? 'flex-1 py-1.5 text-xs font-semibold rounded-md bg-slate-800 text-white transition-colors' : 'flex-1 py-1.5 text-xs font-semibold rounded-md bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 transition-colors';
-            renderAdList();
-        }
-
-        function renderAdList() {
-            const container = document.getElementById('adList');
-            const keyword = document.getElementById('searchInput').value.toLowerCase();
-            container.innerHTML = '';
-            let count = 0;
-            adsData.forEach((ad, index) => {
-                if (currentFilter === 'edited' && !ad.isEdited) return;
-                const searchStr = `${ad.original['廣告活動'] || ''} ${ad.original['廣告群組'] || ''}`.toLowerCase();
-                if (keyword && !searchStr.includes(keyword)) return;
-                count++;
-                const campaign = ad.original['廣告活動'] || '(未命名廣告活動)';
-                const adGroup = ad.original['廣告群組'] || '(未命名廣告群組)';
-                const status = ad.original['廣告狀態'] || ad.original['狀態'] || '未知';
-                const isActive =
+        function setupWorkspace
