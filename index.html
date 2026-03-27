@@ -219,12 +219,13 @@
 
         // ⚠️【核心設定：請務必填寫您的正確金鑰】⚠️
         const firebaseConfig = {
-  apiKey: "AIzaSyBvmj0QhTdZZY8H0dSRTfahYPTtdKaWVWI",
-  authDomain: "ads-editor-7c18e.firebaseapp.com",
-  projectId: "ads-editor-7c18e",
-  storageBucket: "ads-editor-7c18e.firebasestorage.app",
-  messagingSenderId: "162427658444",
-  appId: "1:162427658444:web:b981c9b006fc7b5f0da269"};
+            apiKey: "AIzaSyBvmj0QhTdZZY8H0dSRTfahYPTtdKaWVWI",
+            authDomain: "ads-editor-7c18e.firebaseapp.com",
+            projectId: "ads-editor-7c18e",
+            storageBucket: "ads-editor-7c18e.firebasestorage.app",
+            messagingSenderId: "162427658444",
+            appId: "1:162427658444:web:b981c9b006fc7b5f0da269"
+        };
 
         // 嘗試初始化 Firebase，失敗也不要影響主程式
         let app, auth, db;
@@ -435,7 +436,9 @@
             document.getElementById('exportBtn').classList.remove('hidden');
             document.getElementById('shareBtn').classList.remove('hidden');
             document.getElementById('headerStats').classList.remove('hidden');
-            if(currentShareId) filterAds('edited'); else renderAdList();
+            
+            // 🔥 重點修改：無論是否為雲端模式，預設皆顯示「全部」，避免客戶開啟連結時看到空白
+            filterAds('all');
         }
 
         function filterAds(type) {
